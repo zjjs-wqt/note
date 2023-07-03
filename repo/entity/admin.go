@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	B = "dpm" // 可区分标识符
+	B = "note" // 可区分标识符
 )
 
 // Admin 管理员

@@ -42,6 +42,8 @@ func NewNoteController(router gin.IRouter) *NoteController {
 	r.POST("/assert", User, res.assertPost)
 	// 下载笔记资源
 	r.GET("/assert", User, res.assertGet)
+	// 修改笔记分组
+	r.GET("/group", User, res.Group)
 	// 获取笔记编辑锁
 	r.POST("/lock", User, res.lock)
 	// 取消编辑
@@ -138,7 +140,7 @@ func (c *NoteController) create(ctx *gin.Context) {
 	note.UserId = claims.Sub
 	note.TitlePy = str
 	note.Priority = noteCreateDto.Priority
-	note.Tags = noteCreateDto.Tags
+	//note.Tags = noteCreateDto.Tags
 	note.IsDelete = 0
 
 	result := ""
@@ -175,20 +177,21 @@ func (c *NoteController) create(ctx *gin.Context) {
 		noteMember.Role = 0
 		noteMember.UserId = claims.Sub
 		noteMember.NoteId = note.ID
+		noteMember.NoteGroup = noteCreateDto.Tags
 		err = tx.Create(&noteMember).Error
 		if err != nil {
 			return err
 		}
 
-		// 更新标签
-		if note.Tags != "" {
+		// 更新组信息
+		if noteCreateDto.Tags != "" {
 			var usr entity.User
 			err = repo.DBDao.First(&usr, "id = ?", claims.Sub).Error
 			if err != nil {
 				return err
 			}
 			tags := strings.Split(usr.NoteTags, ",")
-			noteTags := strings.Split(note.Tags, ",")
+			noteTags := strings.Split(noteCreateDto.Tags, ",")
 			tags = append(tags, noteTags...)
 
 			temp := map[string]struct{}{}
@@ -291,7 +294,7 @@ func (c *NoteController) info(ctx *gin.Context) {
 		return
 	}
 	info.UpdatedAt = note.UpdatedAt
-	info.Tags = note.Tags
+	//info.Tags = note.Tags
 	info.ID = note.ID
 
 	// 判断是否拥有笔记权限
@@ -304,6 +307,7 @@ func (c *NoteController) info(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
+	info.NoteGroup = noteMember.NoteGroup
 	info.Role = noteMember.Role
 	info.Remark = noteMember.Remark
 	info.Title = note.Title
@@ -425,7 +429,7 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 		//	LEFT JOIN notes ON notes.id = note_members.note_id
 		//	RIGHT JOIN users on users.id = note_members.user_id
 		db = db.Table("note_members").
-			Select("notes.id AS id ,notes.updated_at,notes.title,note_members.remark,users.`name` AS username, notes.tags ,note_members.role ").
+			Select("notes.id AS id ,notes.updated_at,notes.title,note_members.remark,users.`name` AS username, note_members.note_group ,note_members.role ").
 			Joins("LEFT JOIN notes ON notes.id = note_members.note_id").Joins("RIGHT JOIN users on users.id = note_members.user_id")
 
 		// 前端数据展示排序
@@ -460,7 +464,7 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 		}
 
 		if tag != "" {
-			db = db.Where("tags like ?", fmt.Sprintf("%%%s%%", tag))
+			db = db.Where("note_members.note_group like ?", fmt.Sprintf("%%%s%%", tag))
 		}
 
 		return db
@@ -1064,4 +1068,63 @@ func (c *NoteController) restore(ctx *gin.Context) {
 		return
 	}
 
+}
+
+// Group 用户分组
+func (c *NoteController) Group(ctx *gin.Context) {
+	id := ctx.Query("id")
+	noteGroup := ctx.Query("group")
+	// 获取用户信息
+	claimsValue, _ := ctx.Get(middle.FlagClaims)
+	claims := claimsValue.(*jwt.Claims)
+
+	noteId, _ := strconv.Atoi(id)
+	if noteId <= 0 || noteGroup == "" {
+		ErrIllegal(ctx, "参数解析错误")
+		return
+	}
+	// 修改笔记
+	var noteMember entity.NoteMember
+	err := repo.DBDao.First(&noteMember, "user_id = ? AND note_id = ?", claims.Sub, noteId).Error
+	if err == gorm.ErrRecordNotFound {
+		ErrIllegal(ctx, "用户未有该笔记权限")
+		return
+	} else if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+	err = repo.DBDao.Where("user_id = ? AND note_id = ?", claims.Sub, noteId).Find(&entity.NoteMember{}).Update("note_group", noteGroup).Error
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	// 修改用户
+	var usr entity.User
+	err = repo.DBDao.First(&usr, "id = ?", claims.Sub).Error
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+	tags := strings.Split(usr.NoteTags, ",")
+	noteTags := strings.Split(noteGroup, ",")
+	tags = append(tags, noteTags...)
+	result := ""
+	temp := map[string]struct{}{}
+	for _, item := range tags {
+		if _, ok := temp[item]; !ok {
+			temp[item] = struct{}{}
+			if result == "" {
+				result = fmt.Sprintf("%s", item)
+			} else {
+				result = fmt.Sprintf("%s,%s", result, item)
+			}
+		}
+	}
+	err = repo.DBDao.Model(&usr).Where("id", claims.Sub).Update("note_tags", result).Error
+	if err != nil {
+		ErrSys(ctx, err)
+	}
+
+	ctx.JSON(200, strings.Split(result, ","))
 }

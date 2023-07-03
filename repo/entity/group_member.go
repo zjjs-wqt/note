@@ -10,7 +10,7 @@ type GroupMember struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UserId    int       `json:"userId"` // 用户ID
 	Belong    int       `json:"belong"` // 所属用户组ID
-	Role      int       `json:"role"`   //  用户权限： 0 - 用户组拥有者/管理者 1 - 维护2 - 普通用户
+	Role      int       `json:"role"`   //  用户权限： 0 - 用户组拥有者/管理者 1 - 普通用户 2 - 维护
 }
 
 func (c *GroupMember) MarshalJSON() ([]byte, error) {

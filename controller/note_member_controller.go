@@ -117,13 +117,7 @@ func (c *NoteMemberController) share(ctx *gin.Context) {
 					tmp.GroupId = info.Id
 					tmp.UserId = user.UserId
 					tmp.NoteId = info.NoteId
-					if user.Role == 1 {
-						// 若为维护 则设置为可编辑
-						tmp.Role = 2
-					} else if user.Role == 2 {
-						// 若为普通用户 则设置为可查看
-						tmp.Role = 1
-					}
+					tmp.Role = user.Role
 					err = repo.DBDao.Create(&tmp).Error
 					if err != nil {
 						return err

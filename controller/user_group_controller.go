@@ -193,13 +193,9 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 			}
 			if !exist {
 				var tmp entity.NoteMember
-				if reqInfo.Role == 1 {
-					// 若为维护 则设置为可编辑
-					tmp.Role = 2
-				} else if reqInfo.Role == 2 {
-					// 若为普通用户 则设置为可查看
-					tmp.Role = 1
-				}
+
+				tmp.Role = reqInfo.Role
+
 				tmp.UserId = reqInfo.UserId
 				tmp.GroupId = reqInfo.Belong
 				tmp.NoteId = note
@@ -279,16 +275,9 @@ func (c *UserGroupController) change(ctx *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if reqInfo.Role == 1 {
-			err = tx.Model(&entity.NoteMember{}).Where("group_id", info.GroupId).Where("user_id", info.UserId).Update("role", 2).Error
-			if err != nil {
-				return err
-			}
-		} else if reqInfo.Role == 2 {
-			err = tx.Model(&entity.NoteMember{}).Where("group_id", info.GroupId).Where("user_id", info.UserId).Update("role", 1).Error
-			if err != nil {
-				return err
-			}
+		err = tx.Model(&entity.NoteMember{}).Where("group_id", info.GroupId).Where("user_id", info.UserId).Update("role", reqInfo.Role).Error
+		if err != nil {
+			return err
 		}
 
 		return nil
@@ -420,7 +409,7 @@ func (c *UserGroupController) list(ctx *gin.Context) {
 	queryDescription := repo.DBDao.Where("user_groups.description like ? ", fmt.Sprintf("%%%s%%", keyword))
 
 	// 联表后条件查询
-	// SELECT  group_members.id , role , user_id , user_groups.`name` FROM group_members LEFT JOIN user_groups on group_members.belong = user_groups.id200
+	// SELECT  group_members.id , role , user_id , user_groups.`name` FROM group_members LEFT JOIN user_groups on group_members.belong = user_groups.id
 	tx := repo.DBDao.Table("group_members").
 		Select("group_members.id , role , user_id ,belong ,user_groups.`name`").
 		Joins("LEFT JOIN user_groups on group_members.belong = user_groups.id").

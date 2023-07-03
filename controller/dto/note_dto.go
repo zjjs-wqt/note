@@ -23,9 +23,9 @@ type NoteInfoDto struct {
 	Title     string    `json:"title"`
 	Remark    string    `json:"remark"`
 	UserName  string    `json:"userName"`
-	Tags      string    `json:"tags"`     // 笔记标签列表 多个标签使用“,”分隔。  例如： “运维,常见问题”
-	Role      int       `json:"role"`     // 用户权限
-	IsDelete  int       `json:"isDelete"` // 是否删除
+	NoteGroup string    `json:"noteGroup"` // 笔记标签列表 多个标签使用“,”分隔。  例如： “运维,常见问题”
+	Role      int       `json:"role"`      // 用户权限
+	IsDelete  int       `json:"isDelete"`  // 是否删除
 }
 
 func (c *NoteInfoDto) MarshalJSON() ([]byte, error) {
@@ -45,8 +45,8 @@ type NoteListDto struct {
 	Title     string    `json:"title"`
 	Remark    string    `json:"remark"`
 	Username  string    `json:"username"`
-	Tags      string    `json:"tags"` // 笔记标签列表 多个标签使用“,”分隔。  例如： “运维,常见问题”
-	Role      int       `json:"role"` // 用户权限
+	NoteGroup string    `json:"noteGroup"` // 笔记标签列表 多个标签使用“,”分隔。  例如： “运维,常见问题”
+	Role      int       `json:"role"`      // 用户权限
 }
 
 func (c *NoteListDto) MarshalJSON() ([]byte, error) {

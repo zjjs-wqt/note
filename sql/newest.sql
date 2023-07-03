@@ -71,7 +71,6 @@ CREATE TABLE notes
     title_py   VARCHAR(255), -- 文档名拼音缩写
     priority   INTEGER,-- 优先级 默认为0，越大优先级越高，用于文档排序，非特殊情况保持0即可。
     filename   VARCHAR(512),-- 文件名称
-    tags       VARCHAR(1024),-- 用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
     is_delete   TINYINT-- 是否删除 0 - 未删除（默认值） 1 - 删除
 );
 
@@ -83,6 +82,7 @@ CREATE TABLE note_members
     user_id  		INTEGER,                            -- 用户ID
     note_id  		INTEGER,                            -- 笔记ID
     role       TINYINT,-- 用户类型 枚举值：0 - 笔记拥有者/管理者 ， 1 - 可查看 ， 2 - 可编辑
+    note_group  VARCHAR(1024),-- 笔记分组列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
     remark 			VARCHAR(512), -- 备注
     group_id INTEGER                            -- 用户组ID
 );

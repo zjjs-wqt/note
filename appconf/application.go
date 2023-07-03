@@ -23,12 +23,12 @@ type Database struct {
 // 无法找到配置文件时候的缺省配置
 var defaultConfig = Application{
 	Database: Database{
-		DSN:  "root:root@tcp(127.0.0.1:3306)/note?charset=utf8mb4&parseTime=true",
+		DSN:  "root:123qwe@tcp(127.0.0.1:3306)/note?charset=utf8mb4&parseTime=true",
 		Type: "mysql",
 	},
 	LogKeepMaxDays:  3 * 30, // 3月
 	NoteKeepMaxDays: 30,     // 1月
-	Port:            80,
-	SSOBaseUrl:      "http://127.0.0.1:8008",
+	Port:            8011,
+	SSOBaseUrl:      "http://nantemen.hzauth.com",
 	Debug:           true,
 }

@@ -51,8 +51,8 @@ GET /oauth/redirect?code=b9502e98e4e3adf1dd400b39c60e272f7c9458db146d22229f3796c
 
 // redirect 单点登录回调接口
 func (c *SsoController) redirect(ctx *gin.Context) {
-	const clientId = "596f07bb-7fce-448b-a2a6-84e508929a90"
-	const clientSecret = "d143b52c0c65544eeaf78957c273e8917fa791db27ef8890cc95004c9671b5b2"
+	const clientId = "c05e7e41-18ae-4361-81c4-9010d9dd4623"
+	const clientSecret = "b50720a5f8beb350f4d91e1ab49595312230f31ed13e7077e86f9905bc740b37"
 	const grantType = "authorization_code"
 	code := ctx.Query("code")
 
