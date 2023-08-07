@@ -756,6 +756,12 @@ func (c *NoteController) assertPost(ctx *gin.Context) {
 func (c *NoteController) assertGet(ctx *gin.Context) {
 
 	id := ctx.Query("id")
+
+	// 去除转义字符
+	if len(id) > 0 && id[len(id)-1] == '\\' {
+		id = id[:len(id)-1]
+	}
+
 	filename := ctx.Query("file")
 
 	// 文件路径
@@ -932,13 +938,13 @@ func (c *NoteController) export(ctx *gin.Context) {
 	// 无论导出文件是否成功，都需要删除临时文件
 	defer os.RemoveAll(temp)
 
-	err = reuint.CopyTempDir(docFilePath, temp)
+	err = reuint.CopyTempDir(docFilePath, temp, note.Filename)
 	if err != nil {
 		ErrSys(ctx, err)
 		return
 	}
 	// 读取文件
-	temporaryFilename := filepath.Join(temp, note.Filename)
+	temporaryFilename := filepath.Join(temp, "README.md")
 
 	// 防止用户通过 ../../ 的方式下载到操作系统内的重要文件
 	if !strings.HasPrefix(temporaryFilename, temp) {
@@ -965,7 +971,7 @@ func (c *NoteController) export(ctx *gin.Context) {
 		return
 	}
 	reg := regexp.MustCompile("\\/api\\/note\\/assert\\?id=[0-9]+(\\\\)?&file=")
-	results := reg.ReplaceAllString(string(content), "./")
+	results := reg.ReplaceAllString(string(content), "./assert/")
 
 	// 将修改后的内容写入文件
 

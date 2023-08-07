@@ -115,7 +115,7 @@ func pathExists(path string) (bool, error) {
 }
 
 // CopyTempDir 复制至临时文件夹
-func CopyTempDir(srcPath string, destPath string) error {
+func CopyTempDir(srcPath string, destPath string, filename string) error {
 	//检测目录正确性
 	if srcInfo, err := os.Stat(srcPath); err != nil {
 		return err
@@ -152,11 +152,21 @@ func CopyTempDir(srcPath string, destPath string) error {
 			}
 		}
 		if !f.IsDir() {
-			destNewPath := strings.Replace(path, srcPath, destPath, -1)
-			_, err := copyFile(path, destNewPath)
-			if err != nil {
-				return err
+			if filename == f.Name() {
+				destNewPath := strings.Replace(path, srcPath, destPath, -1) // 替换文件名称
+				destNewPath = strings.Replace(destNewPath, filename, "README.md", -1)
+				_, err := copyFile(path, destNewPath)
+				if err != nil {
+					return err
+				}
+			} else {
+				destNewPath := strings.Replace(path, srcPath, filepath.Join(destPath, "assert"), -1)
+				_, err := copyFile(path, destNewPath)
+				if err != nil {
+					return err
+				}
 			}
+
 		}
 		return nil
 	})

@@ -1,7 +1,7 @@
 package appconf
 
 // Version 程序版本号
-const Version string = "V1.0.1"
+const Version string = "V1.1.0"
 
 // Application 应用程序配置对象
 // 该对象用于持有配置文件出现的所有配置参数
