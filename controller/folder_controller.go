@@ -34,7 +34,7 @@ func (c FolderController) create(ctx *gin.Context) {
 	applog.L(ctx, "创建文件夹", map[string]interface{}{
 		"name": folder.Name,
 	})
-	if err != nil {
+	if err != nil || folder.Name == "" {
 		ErrIllegal(ctx, "参数非法，无法解析")
 		return
 	}
