@@ -582,18 +582,38 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 	}
 	var user entity.User
 	// 判断用户是否拥有读写锁
+	// 获取拥有该锁的用户ID
+	v := editLock.Query(id)
 	if autoSave == false {
-		// 获取拥有该锁的用户ID
-		v := editLock.Query(id)
+		if v.UserId == claims.Sub && v.Exp != claims.Exp {
+			ErrIllegal(ctx, fmt.Sprintf("该笔记已在别处打开"))
+			return
+		}
 		// 若无人拥有该锁或拥有该锁的用户为申请者本身
-		if v == middle.NoLock || v == claims.Sub {
-			editLock.Lock(id, claims.Sub)
+		if v.UserId == claims.Sub {
+			editLock.Lock(ctx, id, claims.Sub)
 			defer editLock.Unlock(id)
+		} else if v.UserId == middle.NoLock {
+			ErrIllegal(ctx, fmt.Sprintf("无该笔记编辑锁"))
+			return
 		} else {
 			repo.DBDao.Where("id", v).Find(&user)
 			ErrIllegal(ctx, fmt.Sprintf("%s正在编辑该笔记", user.Name))
 			return
 		}
+	} else {
+		if v.UserId == claims.Sub && v.Exp != claims.Exp {
+			ErrIllegal(ctx, fmt.Sprintf("该笔记已在别处打开"))
+			return
+		} else if v.UserId != claims.Sub && v.UserId != middle.NoLock {
+			repo.DBDao.Where("id", v).Find(&user)
+			ErrIllegal(ctx, fmt.Sprintf("%s正在编辑该笔记", user.Name))
+			return
+		} else if v.UserId == middle.NoLock {
+			ErrIllegal(ctx, fmt.Sprintf("无该笔记编辑锁"))
+			return
+		}
+
 	}
 
 	// 打开一个存在的文件，将原来的内容覆盖掉
@@ -826,8 +846,8 @@ func (c *NoteController) lock(ctx *gin.Context) {
 	// 获取锁信息
 	v := editLock.Query(lockDto.Id)
 	// 若无人拥有该锁或拥有该锁的用户为申请者本身
-	if v == middle.NoLock || v == lockDto.UserId {
-		editLock.Lock(lockDto.Id, lockDto.UserId)
+	if v.UserId == middle.NoLock || v.UserId == lockDto.UserId {
+		editLock.Lock(ctx, lockDto.Id, lockDto.UserId)
 		ctx.JSON(200, "获取到锁")
 	} else {
 		repo.DBDao.Where("id", v).Find(&user)
@@ -853,10 +873,15 @@ func (c *NoteController) cancel(ctx *gin.Context) {
 		return
 	}
 
+	// 获取用户信息
+	claimsValue, _ := ctx.Get(middle.FlagClaims)
+	claims := claimsValue.(*jwt.Claims)
+
 	// 获取锁信息
 	v := editLock.Query(lockDto.Id)
-	if v == lockDto.UserId {
+	if v.UserId == lockDto.UserId && v.Exp == claims.Exp {
 		editLock.Unlock(lockDto.Id)
+	} else if (v.UserId == lockDto.UserId && v.Exp != claims.Exp) || v.UserId == middle.NoLock {
 	} else {
 		ErrIllegal(ctx, "操作异常")
 		return

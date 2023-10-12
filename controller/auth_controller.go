@@ -180,7 +180,6 @@ func (c *LoginController) login(ctx *gin.Context) {
 		ErrIllegal(ctx, "用户名或口令错误")
 		return
 	}
-	//}
 
 	c.userCache.Delete(info.Username)
 	claims := jwt.Claims{Type: userType, Sub: userSub, Exp: time.Now().Add(8 * time.Hour).UnixMilli()}
