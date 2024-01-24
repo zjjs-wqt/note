@@ -36,10 +36,15 @@ func (l *Note) timeoutDeleteDaemon() {
 		for {
 			now := time.Now().AddDate(0, 0, -_globalL.maxKeepDays).Format("2006-01-02 15:04:05")
 			repo.DBDao.Model(&entity.Note{}).Select("id").Where("updated_at < ? AND is_delete = 1", now).Find(&notes)
+
+			// 删除文件夹
 			for _, note := range notes {
 				noteDir := filepath.Join(dir.NoteDir, note)
-				os.RemoveAll(noteDir)
+				_ = os.RemoveAll(noteDir)
+				// 删除笔记成员表内相关记录
+				repo.DBDao.Where("note_id = ?", note).Delete(&entity.NoteMember{})
 			}
+
 			repo.DBDao.Where("updated_at < ? AND is_delete = 1", now).Delete(&entity.Note{})
 			time.Sleep(24 * time.Hour)
 		}

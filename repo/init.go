@@ -19,6 +19,8 @@ var (
 	NoteMemberRepo *NoteMemberRepository
 	UserRepo       *UserRepository
 	UserGroupRepo  *UserGroupRepository
+	FolderRepo     *FolderRepository
+	NoteRepo       *NoteRepository
 )
 
 // Init 初始化数据库信息
@@ -60,5 +62,7 @@ func Init(config *appconf.Application) error {
 	NoteMemberRepo = NewNoteMemberRepository()
 	UserRepo = NewUserRepository()
 	UserGroupRepo = NewUserGroupRepository()
+	FolderRepo = NewFolderRepository()
+	NoteRepo = NewNoteRepository()
 	return nil
 }

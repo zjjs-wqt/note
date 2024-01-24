@@ -13,13 +13,11 @@ type LoginDto struct {
 
 // LoginInfoDto 登录信息dto
 type LoginInfoDto struct {
-	UserType  string   `json:"type"`      // 用户类型
-	ID        int      `json:"id"`        // 用户Id
-	Username  string   `json:"username"`  // 用户名
-	NoteTags  []string `json:"noteTags"`  // 笔记标签
-	GroupTags []string `json:"groupTags"` // 用户组标签
-	Name      string   `json:"name"`      // 用户姓名
-	Exp       int64    `json:"exp"`       // 会话过期时间，单位Unix时间戳毫秒（ms）
+	UserType string `json:"type"`     // 用户类型
+	ID       int    `json:"id"`       // 用户Id
+	Username string `json:"username"` // 用户名
+	Name     string `json:"name"`     // 用户姓名
+	Exp      int64  `json:"exp"`      // 会话过期时间，单位Unix时间戳毫秒（ms）
 }
 
 // Transform 将数据赋值给dto，返回前端
@@ -45,4 +43,10 @@ func (a *AdminLoginDto) Transform(claims *jwt.Claims, admin *entity.Admin) *Admi
 	a.Username = admin.Username
 	a.Exp = claims.Exp
 	return a
+}
+
+// FolderSyncDto 同步 - 用户文件夹信息
+type FolderSyncDto struct {
+	ID         int    `json:"id"`         // 用户id
+	FolderName string `json:"folderName"` //文件夹名称
 }

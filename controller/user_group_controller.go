@@ -39,6 +39,37 @@ func NewUserGroupController(router gin.IRouter) *UserGroupController {
 type UserGroupController struct {
 }
 
+/**
+@api {POST} /api/userGroup/create 创建用户组
+@apiDescription 创建用户组
+@apiName UserGroupCreate
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {String} name 用户组名称。
+@apiParam {String} description 描述。
+
+
+@apiParamExample {json} 请求示例
+{
+	"name":"测试用户组",
+	"description":"",
+}
+
+@apiSuccess {Integer} id 用户组ID。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+1
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
+
 // create 创建用户组
 func (c *UserGroupController) create(ctx *gin.Context) {
 	var userGroup entity.UserGroup
@@ -70,7 +101,7 @@ func (c *UserGroupController) create(ctx *gin.Context) {
 		return
 	}
 
-	//姓名转化为拼音首字母
+	//用户组名称转化为拼音首字母
 	str, err := reuint.PinyinConversion(info.Name)
 	if err != nil {
 		ErrIllegalE(ctx, err)
@@ -86,10 +117,13 @@ func (c *UserGroupController) create(ctx *gin.Context) {
 
 	err = repo.DBDao.Transaction(func(tx *gorm.DB) error {
 
+		// 创建用户组
 		err = tx.Create(&userGroup).Error
 		if err != nil {
 			return err
 		}
+
+		// 创建用户组成员
 		groupMember.UserId = claims.Sub
 		groupMember.Belong = userGroup.ID
 		groupMember.Role = 0
@@ -104,10 +138,43 @@ func (c *UserGroupController) create(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
-
 	ctx.JSON(200, userGroup.ID)
-
 }
+
+/**
+@api {POST} /api/userGroup/add 添加用户
+@apiDescription 添加用户
+@apiName UserGroupAdd
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} groupId 用户组ID。
+@apiParam {Integer} userId 用户ID。
+@apiParam {Integer=1,2} role 用户权限。
+<ul>
+	<li> 1 - 普通用户</li>
+	<li> 2 - 维护</li>
+</ul>
+
+
+@apiParamExample {json} 请求示例
+{
+	"groupId":1,
+	"userId":1,
+	"role":2
+}
+
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // add 添加成员
 func (c *UserGroupController) add(ctx *gin.Context) {
@@ -152,6 +219,7 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 	reqInfo.Role = info.Role
 	reqInfo.UserId = info.UserId
 
+	// 检测用户是否存在
 	exist, err := repo.UserRepo.Exist(info.UserId)
 	if err != nil {
 		ErrSys(ctx, err)
@@ -175,6 +243,7 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 
 	// 创建用户角色
 	err = repo.DBDao.Transaction(func(tx *gorm.DB) error {
+		// 创建用户组成员记录
 		err = tx.Create(&reqInfo).Error
 		if err != nil {
 			return err
@@ -191,11 +260,11 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 			if err != nil {
 				return err
 			}
+			// 若该用户未曾被分享过
 			if !exist {
 				var tmp entity.NoteMember
 
 				tmp.Role = reqInfo.Role
-
 				tmp.UserId = reqInfo.UserId
 				tmp.GroupId = reqInfo.Belong
 				tmp.NoteId = note
@@ -204,6 +273,7 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 					return err
 				}
 			}
+			// 若该用户已经被分享过则保留原有权限
 		}
 
 		return nil
@@ -214,6 +284,41 @@ func (c *UserGroupController) add(ctx *gin.Context) {
 	}
 
 }
+
+/**
+@api {POST} /api/userGroup/change 修改用户权限
+@apiDescription 修改用户权限
+@apiName UserGroupChange
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} groupId 用户组ID。
+@apiParam {Integer} userId 用户ID。
+@apiParam {Integer=1,2} role 用户权限。
+<ul>
+	<li> 1 - 普通用户</li>
+	<li> 2 - 维护</li>
+</ul>
+
+
+@apiParamExample {json} 请求示例
+{
+	"groupId":1,
+	"userId":1,
+	"role":2
+}
+
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // change 修改角色权限
 func (c *UserGroupController) change(ctx *gin.Context) {
@@ -257,7 +362,7 @@ func (c *UserGroupController) change(ctx *gin.Context) {
 		return
 	}
 
-	// 判断用户在该项目中是否存在角色
+	// 判断用户在该用户组中是否存在角色
 	err = repo.DBDao.First(&reqInfo, "user_id = ? AND belong = ? ", info.UserId, info.GroupId).Error
 	if err == gorm.ErrRecordNotFound {
 		ErrIllegal(ctx, "用户组中不存在该用户")
@@ -271,10 +376,12 @@ func (c *UserGroupController) change(ctx *gin.Context) {
 	reqInfo.Role = info.Role
 
 	err = repo.DBDao.Transaction(func(tx *gorm.DB) error {
+		// 修改用户
 		err = tx.Save(&reqInfo).Error
 		if err != nil {
 			return err
 		}
+		// 修改笔记成员中的权限
 		err = tx.Model(&entity.NoteMember{}).Where("group_id", info.GroupId).Where("user_id", info.UserId).Update("role", reqInfo.Role).Error
 		if err != nil {
 			return err
@@ -288,6 +395,29 @@ func (c *UserGroupController) change(ctx *gin.Context) {
 		return
 	}
 }
+
+/**
+@api {DELETE} /api/userGroup/delete 删除用户
+@apiDescription 删除用户
+@apiName UserGroupDelete
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} id 用户ID。
+@apiParam {Integer} groupId 用户组ID
+
+@apiParamExample 请求示例
+DELETE /api/userGroup/delete?id=12&groupId=5
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // delete 删除用户
 func (c *UserGroupController) delete(ctx *gin.Context) {
@@ -307,6 +437,7 @@ func (c *UserGroupController) delete(ctx *gin.Context) {
 		"groupId": groupId,
 	})
 
+	// 查询是否有该用户组成员
 	res := &entity.GroupMember{}
 	err := repo.DBDao.First(res, "user_id = ? AND belong = ?", id, groupId).Error
 	// 没有该记录
@@ -339,6 +470,44 @@ func (c *UserGroupController) delete(ctx *gin.Context) {
 		return
 	}
 }
+
+/**
+@api {GET} /api/userGroup/all 查询用户组成员
+@apiDescription 查询用户组成员
+@apiName UserGroupAll
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {String} keyword 关键字。
+@apiParam {Integer} groupId 用户组ID
+
+@apiParamExample 请求示例
+DELETE /api/userGroup/all?keyword=w&groupId=5
+
+@apiSuccess {MemberAllDTO[]} list 用户信息。
+@apiSuccess (MemberAllDTO) {Integer} id 用户组成员ID。
+@apiSuccess (MemberAllDTO) {Integer} userId 用户ID。
+@apiSuccess (MemberAllDTO) {Integer} role 权限。
+@apiSuccess (MemberAllDTO) {String} name 用户组名称。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+[
+	{
+		"id":4,
+		"userId":30,
+		"role":0,
+		"name":"王沁涛"
+	}
+]
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // all 查询所有成员
 func (c *UserGroupController) all(ctx *gin.Context) {
@@ -393,6 +562,46 @@ func (c *UserGroupController) all(ctx *gin.Context) {
 	ctx.JSON(200, reqInfo)
 }
 
+/**
+@api {GET} /api/userGroup/list 查询用户的用户组列表
+@apiDescription 查询用户的用户组列表
+@apiName UserGroupList
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {String} keyword 关键字。
+@apiParam {Integer} [role=255] 用户权限
+
+@apiParamExample 请求示例
+DELETE /api/userGroup/list?keyword=w
+
+@apiSuccess {MemberListDTO[]} list 用户信息。
+@apiSuccess (MemberListDTO) {Integer} id 用户组成员ID。
+@apiSuccess (MemberListDTO) {Integer} userId 用户ID。
+@apiSuccess (MemberListDTO) {Integer} belong 用户组ID。
+@apiSuccess (MemberListDTO) {Integer} role 权限。
+@apiSuccess (MemberListDTO) {String} name 用户组名称。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+[
+	{
+		"id":4,
+		"userId":30,
+		"belong":2,
+		"role":0,
+		"name":"测试用户组"
+	}
+]
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
 // list 查询用户的用户组列表
 func (c *UserGroupController) list(ctx *gin.Context) {
 
@@ -426,6 +635,32 @@ func (c *UserGroupController) list(ctx *gin.Context) {
 
 	ctx.JSON(200, reqInfo)
 }
+
+/**
+@api {GET} /api/userGroup/role 查询用户组用户权限
+@apiDescription 查询用户组用户权限
+@apiName UserGroupRole
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} groupId 用户组ID
+
+@apiParamExample 请求示例
+DELETE /api/userGroup/role?groupId=5
+
+@apiSuccess  {Integer} role 用户权限。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+0
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // role 查询用户组用户权限
 func (c *UserGroupController) role(ctx *gin.Context) {

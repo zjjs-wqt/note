@@ -1,11 +1,20 @@
 package dto
 
+// FolderCreateDto 文件夹创建
 type FolderCreateDto struct {
-	ID   int    `json:"id"`   // 用户ID
-	Name string `json:"name"` //文件夹名称
+	Name     string `json:"name"`     // 文件夹名称
+	ParentId int    `json:"parentId"` // 父文件夹ID
 }
 
-type FolderIDDto struct {
-	ID   int      `gorm:"autoIncrement" json:"id"`
-	Tags []string `json:"tags"`
+// FolderRenameDto 文件夹重命名
+type FolderRenameDto struct {
+	ID       int    `json:"id"`       // 文件夹ID
+	Name     string `json:"name"`     // 文件夹名称
+	ParentId int    `json:"parentId"` // 父文件夹ID
+}
+
+// FolderRemoveDto 文件夹移动
+type FolderRemoveDto struct {
+	ID       int `json:"id"`       // 文件夹ID
+	ParentId int `json:"parentId"` // 移动到的文件夹ID
 }

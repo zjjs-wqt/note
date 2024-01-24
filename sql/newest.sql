@@ -1,14 +1,15 @@
 -- 创建管理员表
 CREATE TABLE admins
 (
-    id         INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
-    created_at DATETIME,  -- 创建时间
-    username   VARCHAR(128), -- 用户名
-    password   VARCHAR(512), -- 口令加盐Hash结果 16进制字符串
-    salt       VARCHAR(512), -- 盐值 16进制字符串
-    role       TINYINT, -- 角色类型
-    cert       TEXT-- 证书
+    id         INTEGER PRIMARY KEY AUTO_INCREMENT,  -- 自增主键
+    created_at DATETIME,                            -- 创建时间
+    username   VARCHAR(128),                        -- 用户名
+    password   VARCHAR(512),                        -- 口令加盐Hash结果 16进制字符串
+    salt       VARCHAR(512),                        -- 盐值 16进制字符串
+    role       TINYINT,                             -- 角色类型
+    cert       TEXT                                 -- 证书
 );
+
 -- 创建admin
 INSERT INTO `admins`
 VALUES (1, '2022-11-07 09:19:44', 'admin',
@@ -24,7 +25,7 @@ CREATE TABLE users
 (
     id          INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
     created_at  DATETIME,                           -- 创建时间
-    openid     VARCHAR(200),                        -- 开放ID 用于关联三方系统，可以是工号
+    openid      VARCHAR(200),                       -- 开放ID 用于关联三方系统，可以是工号
     username    VARCHAR(128),                       -- 用户登录时输入的账户名称
     name        VARCHAR(256),                       -- 用户真实姓名
     name_py     VARCHAR(32),                        -- 姓名拼音缩写
@@ -34,44 +35,54 @@ CREATE TABLE users
     phone       VARCHAR(256),                       -- 手机号
     email       VARCHAR(256),                       -- 邮箱
     sn          VARCHAR(512),                       -- 身份证
-    note_tags   VARCHAR(1024),-- 用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
-    group_tags  VARCHAR(1024),-- 用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
-    is_delete   TINYINT															-- 是否删除 0 - 未删除（默认值） 1 - 删除
+    note_tags   VARCHAR(1024),                      -- （已弃用）文件夹标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
+    group_tags  VARCHAR(1024),                      -- （已弃用）用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
+    is_delete   TINYINT								-- 是否删除 0 - 未删除（默认值） 1 - 删除
 );
 
 -- 创建用户组表
 CREATE TABLE user_groups
 (
-    id            INTEGER PRIMARY KEY AUTO_INCREMENT,-- 自增主键
-    created_at    DATETIME,-- 创建时间
-    name          VARCHAR(512) NOT NULL,-- 用户组名称
-    name_py  			VARCHAR(32),-- 用户组名称拼音缩写
-    description   VARCHAR(256),-- 描述
-    tags        	VARCHAR(1024)-- 用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
+    id            INTEGER PRIMARY KEY AUTO_INCREMENT,   -- 自增主键
+    created_at    DATETIME,                             -- 创建时间
+    name          VARCHAR(512) NOT NULL,                -- 用户组名称
+    name_py  	  VARCHAR(32),                          -- 用户组名称拼音缩写
+    description   VARCHAR(256),                         -- 描述
+    tags          VARCHAR(1024)                         -- （已弃用）用户组标签列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
 );
 
 -- 创建用户组成员表
 CREATE TABLE group_members
 (
-    id         INTEGER PRIMARY KEY AUTO_INCREMENT,-- 自增主键
-    created_at DATETIME,-- 创建时间
-    user_id    INTEGER,-- 用户ID
-    belong     INTEGER,-- 所属项目
-    role       TINYINT-- 用户类型 枚举值：0 - 用户组拥有者/管理者 ， 1 - 维护 ， 2 - 普通用户
+    id         INTEGER PRIMARY KEY AUTO_INCREMENT,  -- 自增主键
+    created_at DATETIME,                            -- 创建时间
+    user_id    INTEGER,                             -- 用户ID
+    belong     INTEGER,                             -- 所属项目
+    role       TINYINT                              -- 用户类型 枚举值：0 - 用户组拥有者/管理者 ， 1 - 维护 ， 2 - 普通用户
 );
 
 -- 创建文档表
 CREATE TABLE notes
 (
-    id         INTEGER PRIMARY KEY AUTO_INCREMENT,-- 自增主键
-    created_at DATETIME,-- 创建时间
-    updated_at DATETIME,-- 更新时间
-    user_id 	 INTEGER,-- 所属用户ID
-    title      VARCHAR(512) NOT NULL,-- 文档名
-    title_py   VARCHAR(255), -- 文档名拼音缩写
-    priority   INTEGER,-- 优先级 默认为0，越大优先级越高，用于文档排序，非特殊情况保持0即可。
-    filename   VARCHAR(512),-- 文件名称
-    is_delete   TINYINT-- 是否删除 0 - 未删除（默认值） 1 - 删除
+    id          INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
+    created_at  DATETIME,                           -- 创建时间
+    updated_at  DATETIME,                           -- 更新时间
+    user_id     INTEGER,                            -- 所属用户ID
+    title       VARCHAR(512) NOT NULL,              -- 文档名
+    title_py    VARCHAR(255),                       -- 文档名拼音缩写
+    priority    INTEGER,                            -- 优先级 默认为0，越大优先级越高，用于文档排序，非特殊情况保持0即可。
+    filename    VARCHAR(512),                       -- 文件名称
+    is_delete   TINYINT                             -- 是否删除 0 - 未删除（默认值） 1 - 删除
+);
+
+-- 创建文件夹表
+CREATE TABLE folders
+(
+    id          INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
+    created_at  DATETIME,                           -- 创建时间
+    user_id 	INTEGER,                            -- 所属用户ID
+    name        VARCHAR(256),                       -- 文件夹名称
+    parent_id   INTEGER                             -- 父文件夹ID，若为0，则为根文件夹。
 );
 
 -- 创建笔记成员表
@@ -79,12 +90,13 @@ CREATE TABLE note_members
 (
     id          INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
     created_at  DATETIME,                           -- 创建时间
-    user_id  		INTEGER,                            -- 用户ID
-    note_id  		INTEGER,                            -- 笔记ID
-    role       TINYINT,-- 用户类型 枚举值：0 - 笔记拥有者/管理者 ， 1 - 可查看 ， 2 - 可编辑
-    note_group  VARCHAR(1024),-- 笔记分组列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
-    remark 			VARCHAR(512), -- 备注
-    group_id INTEGER                            -- 用户组ID
+    user_id     INTEGER,                            -- 用户ID
+    note_id  	INTEGER,                            -- 笔记ID
+    role        TINYINT,                            -- 用户类型 枚举值：0 - 笔记拥有者/管理者 ， 1 - 可查看 ， 2 - 可编辑
+    note_group  VARCHAR(1024),                      -- （已弃用）笔记分组列表 "多个标签使用“,”分隔。例如： “运维,常见问题”"
+    remark 		VARCHAR(512),                       -- 备注
+    group_id    INTEGER,                            -- 用户组ID
+    folder_id   INTEGER                             -- 文件夹ID
 );
 
 
@@ -100,13 +112,14 @@ CREATE TABLE logs
 );
 
 
--- 创建版本号表
+-- 创建配置表
 CREATE TABLE configs
 (
-    id        INTEGER PRIMARY KEY AUTO_INCREMENT, -- 自增主键
-    item_name VARCHAR(256),
-    content   VARCHAR(256)                        -- 版本号时间
+    id        INTEGER PRIMARY KEY AUTO_INCREMENT,   -- 自增主键
+    item_name VARCHAR(256),                         -- 版本号名称
+    content   VARCHAR(256)                          -- 版本号时间
 );
+
 -- 创建版本号记录
 INSERT INTO configs(item_name, content)
 VALUES ("db_version", "2023031401");

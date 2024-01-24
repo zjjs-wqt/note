@@ -33,9 +33,11 @@ func NewLoginController(r gin.IRouter) *LoginController {
 	r.POST("/entityAuth", res.entityAuth)
 	// 证书绑定
 	r.POST("/certBinding", res.certBinding)
-
 	// 验证登录token
 	r.GET("/check", res.check)
+	// 临时接口 --- 同步用户数据至文件夹表
+	r.GET("/sync", res.sync)
+
 	res.userCache = cache.New(cache.NoExpiration, 10*time.Minute)
 
 	// 初始化证书池
@@ -162,8 +164,6 @@ func (c *LoginController) login(ctx *gin.Context) {
 		userSub = usr.ID
 		reqInfo.Username = usr.Username
 		reqInfo.Name = usr.Name
-		reqInfo.GroupTags = strings.Split(usr.GroupTags, ",")
-		reqInfo.NoteTags = strings.Split(usr.NoteTags, ",")
 	}
 	// 用户表未找到记录，抛出异常
 	if err == gorm.ErrRecordNotFound {
@@ -182,11 +182,11 @@ func (c *LoginController) login(ctx *gin.Context) {
 	}
 
 	c.userCache.Delete(info.Username)
-	claims := jwt.Claims{Type: userType, Sub: userSub, Exp: time.Now().Add(8 * time.Hour).UnixMilli()}
+	claims := jwt.Claims{Type: userType, Sub: userSub, Exp: time.Now().Add(10 * time.Hour).UnixMilli()}
 	token := tokenManager.GenToken(&claims)
 	reqInfo.Transform(&claims)
-	// 设置头部 Cookies 有效时间为8小时
-	ctx.SetCookie("token", token, 8*3600, "", "", false, true)
+	// 设置头部 Cookies 有效时间为10小时
+	ctx.SetCookie("token", token, 10*3600, "", "", false, true)
 	ctx.JSON(200, reqInfo)
 }
 
@@ -377,11 +377,11 @@ func (c *LoginController) entityAuth(ctx *gin.Context) {
 	} else if info.Role == 1 {
 		role = "audit"
 	}
-	claims := jwt.Claims{Type: role, Sub: info.ID, Exp: time.Now().Add(8 * time.Hour).UnixMilli()}
+	claims := jwt.Claims{Type: role, Sub: info.ID, Exp: time.Now().Add(10 * time.Hour).UnixMilli()}
 	token := tokenManager.GenToken(&claims)
 	reqInfo.Transform(&claims, &info)
-	// 设置头部 Cookies 有效时间为8小时
-	ctx.SetCookie("token", token, 8*3600, "", "", false, true)
+	// 设置头部 Cookies 有效时间为10小时
+	ctx.SetCookie("token", token, 10*3600, "", "", false, true)
 	ctx.JSON(200, reqInfo)
 }
 
@@ -560,8 +560,6 @@ func (c *LoginController) check(ctx *gin.Context) {
 			ErrSys(ctx, err)
 			return
 		}
-		res.GroupTags = strings.Split(usr.GroupTags, ",")
-		res.NoteTags = strings.Split(usr.NoteTags, ",")
 		res.Username = usr.Username
 		res.Name = usr.Name
 	} else if claims.Type == "admin" || claims.Type == "audit" {
@@ -574,4 +572,90 @@ func (c *LoginController) check(ctx *gin.Context) {
 	res.Transform(claims)
 
 	ctx.JSON(200, res)
+}
+
+/**
+@api {GET} /api/sync 同步用户数据至文件夹表(临时接口)
+@apiDescription 同步用户数据至文件夹表(临时接口)。
+@apiName AuthSync
+@apiGroup Auth
+
+@apiPermission 管理员
+
+@apiParamExample {HTTP} 请求示例
+GET /api/sync
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
+// sync 同步用户数据至文件夹表
+func (c *LoginController) sync(ctx *gin.Context) {
+
+	// 读取用户表信息
+	users := []entity.User{}
+	if err := repo.DBDao.Find(&users).Error; err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	// 事务 - 处理用户表中的文件夹信息 、 笔记成员表
+	err := repo.DBDao.Transaction(func(tx *gorm.DB) error {
+		for i := range users {
+			// 读取用户的文件夹信息，并创建文件夹表
+			noteTags := users[i].NoteTags
+			// 分隔用户文件夹信息，以`,`分隔
+			tags := strings.Split(noteTags, ",")
+			// 创建每一个文件夹
+			for j := range tags {
+				tag := strings.Replace(tags[j], " ", "", -1)
+				if tag == "" {
+					continue
+				}
+				folder := entity.Folder{
+					UserId: users[i].ID,
+					Name:   tag,
+				}
+
+				if dbErr := repo.DBDao.Create(&folder).Error; dbErr != nil {
+					return dbErr
+				}
+			}
+		}
+
+		// 查询笔记成员表
+		noteMembers := []entity.NoteMember{}
+		tx.Find(&noteMembers)
+		for i := range noteMembers {
+			noteMember := noteMembers[i]
+			// 如果笔记成员有文件夹信息
+			if noteMember.NoteGroup != "" {
+				// 取第一个文件夹信息作为文件夹
+				tags := strings.Split(noteMember.NoteGroup, ",")
+				tag := strings.Replace(tags[0], " ", "", -1)
+				folder := entity.Folder{}
+				// 根据 文件夹名称 以及 用户ID 查询 文件夹信息
+				tx.Where("name = ? and user_id = ?", tag, noteMember.UserId).Find(&folder)
+				if folder.ID != 0 {
+					noteMember.FolderId = folder.ID
+					// 更新 笔记成员 信息
+					tx.Save(&noteMember)
+				}
+
+			}
+
+		}
+
+		return nil
+	})
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
 }

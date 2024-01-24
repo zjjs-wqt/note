@@ -16,7 +16,7 @@ type UserGroupMemberAddDto struct {
 type MemberAllDTO struct {
 	ID     int    `json:"id"`     // 记录ID
 	UserId int    `json:"userId"` // 用户ID
-	Role   int    `json:"role"`   // 角色 角色类型包括：0 - 访客，1 - 测试，2 - 开发，3 - 维护，4-负责人
+	Role   int    `json:"role"`   // 角色 角色类型包括：0 - 管理者，1 - 普通用户，2 - 维护
 	Name   string `json:"name"`
 }
 
@@ -25,7 +25,7 @@ type MemberListDTO struct {
 	ID     int    `json:"id"`     // 记录ID
 	UserId int    `json:"userId"` // 用户ID
 	Belong int    `json:"belong"` // 所属用户组
-	Role   int    `json:"role"`   // 角色 角色类型包括：0 - 访客，1 - 测试，2 - 开发，3 - 维护，4-负责人
+	Role   int    `json:"role"`   // 角色 角色类型包括：0 - 管理者，1 - 普通用户，2 - 维护
 	Name   string `json:"name"`   // 用户组名称
 }
 

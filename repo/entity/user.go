@@ -18,8 +18,8 @@ type User struct {
 	Phone     string    `json:"phone"`     // 手机号
 	Email     string    `json:"email"`     // 邮箱
 	Sn        string    `json:"sn"`        // 身份证
-	NoteTags  string    `json:"noteTags"`  // 笔记标签
-	GroupTags string    `json:"groupTags"` // 用户组标签
+	NoteTags  string    `json:"noteTags"`  // 笔记标签 - 已弃用
+	GroupTags string    `json:"groupTags"` // 用户组标签 - 已弃用
 	IsDelete  int       `json:"isDelete"`  // 是否删除 0 - 未删除（默认值） 1 - 删除
 }
 

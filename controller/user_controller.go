@@ -49,10 +49,45 @@ func NewUserController(router gin.IRouter) *UserController {
 type UserController struct {
 }
 
+/**
+@api {POST} /api/user/create 创建用户
+@apiDescription 创建用户
+@apiName UserCreate
+@apiGroup User
+
+@apiPermission 管理员
+
+@apiParam {String} openid 工号。
+@apiParam {String} name 姓名。
+@apiParam {String} [phone] 手机号。
+@apiParam {String} [email] 邮箱。
+@apiParam {String} password 口令
+
+@apiParamExample {json} 请求示例
+{
+    "email":"419384048@qq.com",
+	"name":"测试用户01",
+	"openid":"5001",
+	"password":"w7980361",
+	"phone":"19212555512"
+}
+
+@apiSuccess {Integer} id 用户ID。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+1
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
+
 // create 创建用户
 func (c *UserController) create(ctx *gin.Context) {
 	var reqInfo entity.User
-	var userDto dto.UserDto
 	var userCreateDto dto.UserCreateDto
 
 	err := ctx.BindJSON(&userCreateDto)
@@ -99,9 +134,8 @@ func (c *UserController) create(ctx *gin.Context) {
 		ErrIllegal(ctx, "工号已经存在")
 		return
 	}
-	userCreateDto.Username = userCreateDto.Openid
 	// 用户名唯一
-	exist, err = repo.UserRepo.ExistUsername(userCreateDto.Username)
+	exist, err = repo.UserRepo.ExistUsername(userCreateDto.Openid)
 	if err != nil {
 		ErrSys(ctx, err)
 		return
@@ -116,7 +150,6 @@ func (c *UserController) create(ctx *gin.Context) {
 		ErrIllegalE(ctx, err)
 		return
 	}
-	userCreateDto.NamePy = str
 	// 口令长度 大于等8位
 	if len(strings.Trim(userCreateDto.Password.String(), " ")) < 8 {
 		ErrIllegal(ctx, "口令长度不少于8位")
@@ -127,21 +160,93 @@ func (c *UserController) create(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
-	// 密码和盐值
-	userCreateDto.Password = entity.Pwd(pwd)
-	userCreateDto.Salt = salt
 
-	userCreateDto.IsDelete = 0
-	userCreateDto.NewEntity(&reqInfo)
-	err = repo.DBDao.Create(&reqInfo).Error
-	userDto.Transform(&reqInfo)
-	if err != nil {
-		ErrSys(ctx, err)
-		return
+	// 赋值并创建
+	reqInfo = entity.User{
+		Username: userCreateDto.Openid,
+		Name:     userCreateDto.Name,
+		NamePy:   str,
+		Password: entity.Pwd(pwd),
+		Salt:     salt,
+		Openid:   userCreateDto.Openid,
+		Phone:    userCreateDto.Phone,
+		Email:    userCreateDto.Email,
 	}
+	err = repo.DBDao.Create(&reqInfo).Error
 
-	ctx.JSON(200, userDto)
+	// 返回前端信息
+	ctx.JSON(200, reqInfo.ID)
 }
+
+/**
+@api {GET} /api/user/search 搜索用户
+@apiDescription 搜索用户
+@apiName UserSearch
+@apiGroup User
+
+@apiPermission 管理员
+
+@apiParam {String} keyword 关键字。
+@apiParam {Integer} page 页码。
+@apiParam {Integer} limit 单页显示数量。
+
+@apiParamExample {json} 请求示例
+GET /api/user/search?keyword=w&page=1&limit=20
+
+@apiSuccess {User[]} records 查询结果列表。
+@apiSuccess {Integer} total 记录总数。
+@apiSuccess {Integer} size 每页显示条数，默认 20。
+@apiSuccess {Integer} current 当前页。
+@apiSuccess {Integer} pages 总页数。
+
+@apiSuccess {Object} User 用户信息
+@apiSuccess {Integer} User.id 用户ID。
+@apiSuccess {String} User.username 用户名
+@apiSuccess {String} User.name 姓名
+@apiSuccess {String} User.namePy 姓名拼音
+@apiSuccess {String} User.password 口令加盐摘要Hex
+@apiSuccess {String} User.avatar 头像文件名
+@apiSuccess {String} User.openid 开放ID
+@apiSuccess {String} User.phone 手机号
+@apiSuccess {String} User.email 邮箱
+@apiSuccess {String} User.sn 身份证
+@apiSuccess {String} User.noteTags 笔记标签 - 已弃用
+@apiSuccess {String} User.groupTags 用户组标签 - 已弃用
+@apiSuccess {Integer} User.isDelete 是否删除 0 - 未删除（默认值） 1 - 删除
+@apiSuccess {String} User.createdAt 创建时间
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+{
+    "records": [
+        {
+            "id": 31,
+            "username": "5001",
+            "name": "测试用户01",
+            "namePy": "csyh",
+            "password": "",
+            "avatar": "",
+            "openid": "5001",
+            "phone": "19858124520",
+            "email": "419384048@qq.com",
+            "sn": "",
+            "noteTags": "",
+            "groupTags": "",
+            "isDelete": 0,
+            "createdAt": "2024-01-16 14:06:21"
+        }
+    ],
+    "total": 21,
+    "size": 20,
+    "current": 2,
+    "pages": 2
+}
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // search 查找用户
 func (c *UserController) search(ctx *gin.Context) {
@@ -177,6 +282,37 @@ func (c *UserController) search(ctx *gin.Context) {
 	reqInfo.Records = res
 	ctx.JSON(200, &reqInfo)
 }
+
+/**
+@api {POST} /api/user/modifyPwd 修改用户密码
+@apiDescription 修改用户密码
+
+@apiName UserModifyPwd
+@apiGroup User
+
+@apiPermission 管理员,用户
+
+
+@apiParam {String} username 用户名。
+@apiParam {String} oldPwd 旧口令。
+@apiParam {String} newPwd 新口令。
+
+
+@apiParamExample {json} 请求示例
+{
+    "username":"22004",
+	"oldPwd":"12345678",
+	"newPwd":"Gm123qwe"
+}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // modifyPwd 修改口令
 func (c *UserController) modifyPwd(ctx *gin.Context) {
@@ -247,6 +383,35 @@ func (c *UserController) modifyPwd(ctx *gin.Context) {
 	}
 }
 
+/**
+@api {GET} /api/user/nameList 展示下拉框名称列表
+@apiDescription 展示下拉框名称列表
+@apiName UserNameList
+@apiGroup User
+
+@apiPermission 管理员，用户
+
+@apiParam {String} keyword 关键字。
+
+@apiParamExample 请求示例
+GET /api/user/nameList?keyword=zs
+
+@apiSuccess {Integer} id 用户ID。
+@apiSuccess {String} name 用户姓名。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+[
+    { "id": 1, "name": "张三"},
+]
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
 // nameList 展示下拉框名称列表
 func (c *UserController) nameList(ctx *gin.Context) {
 	keyword := ctx.Query("keyword")
@@ -266,6 +431,46 @@ func (c *UserController) nameList(ctx *gin.Context) {
 	}
 	ctx.JSON(200, *reqInfo)
 }
+
+/**
+@api {GET} /api/user/info 用户个人信息
+@apiDescription 查询用户个人信息
+@apiName UserInfo
+@apiGroup User
+
+@apiPermission 管理员，用户
+
+@apiParam {Integer} userId 用户ID
+
+@apiParamExample 请求示例
+GET /api/user/info?userId=1
+
+@apiSuccess {Integer} id 用户ID。
+@apiSuccess {String} username 用户名，不可重复。
+@apiSuccess {String} name 用户姓名。
+@apiSuccess {Integer} openId 用户工号。
+@apiSuccess {String} phone 手机号。
+@apiSuccess {String} email 邮箱。
+@apiSuccess {String} sn 邮箱。
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+{
+	"id":1,
+	"username":"zs",
+	"name": "张三",
+	"sn": "354512459555454512",
+	"phone":"13855555555",
+	"email":"123@qq.com",
+	"openId": 1001
+}
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // info 查询用户个人信息
 func (c *UserController) info(ctx *gin.Context) {
@@ -297,6 +502,41 @@ func (c *UserController) info(ctx *gin.Context) {
 	ctx.JSON(200, reqInfo)
 }
 
+/**
+@api {POST} /api/user/edit 编辑用户信息
+@apiDescription 修改用户信息，管理员具有修改用户全部信息的权限，用户仅可以修改自己的部分信息，如：手机号，邮箱。
+@apiName UserEdit
+@apiGroup User
+
+@apiPermission 管理员，用户
+
+@apiParam {Integer} id 用户ID。
+@apiParam {String} open_id 工号。
+@apiParam {String} username 用户名。
+@apiParam {String} name 姓名。
+@apiParam {String} phone 手机号。
+@apiParam {String} email 邮箱。
+
+
+@apiParamExample {json} 请求示例
+{
+    "id": 1,
+	"openId":"1001",
+	"username":"zs",
+	"name":"张三",
+	"phone":"13855555555",
+	"email":"123@qq.com"
+}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
 // edit 修改用户信息
 func (c *UserController) edit(ctx *gin.Context) {
 	var info entity.User
@@ -320,6 +560,7 @@ func (c *UserController) edit(ctx *gin.Context) {
 		return
 	}
 
+	// 查询用户信息
 	var reqInfo entity.User
 	err = repo.DBDao.First(&reqInfo, "id = ? AND is_delete = ?", info.ID, 0).Error
 	if err == gorm.ErrRecordNotFound {
@@ -372,6 +613,35 @@ func (c *UserController) edit(ctx *gin.Context) {
 	}
 }
 
+/**
+@api {POST} /api/user/updateAvatar 更换头像
+@apiDescription 更新用户头像，json传输base64，仅支持支持小于64k jpeg、png。
+@apiName UserUpdateAvatar
+@apiGroup User
+
+@apiPermission 用户
+
+@apiHeader {String} Content-type multipart/form-data 多类型表单固定值。
+
+@apiParam {String} username 用户名。
+@apiParam {File} avatar 头像文件。
+
+
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+用户记录ID非法
+
+@apiErrorExample 失败响应2
+HTTP/1.1 400 Bad Request
+
+图片格式错误，无法解析
+*/
+
 // updateAvatar 更新头像
 func (c *UserController) updateAvatar(ctx *gin.Context) {
 	id, err := strconv.Atoi(ctx.PostForm("id"))
@@ -394,10 +664,12 @@ func (c *UserController) updateAvatar(ctx *gin.Context) {
 	claimsValue, _ := ctx.Get(middle.FlagClaims)
 	claims := claimsValue.(*jwt.Claims)
 
-	if claims.Type == "user" && claims.Sub != id {
+	if (claims.Type == "user" && claims.Sub != id) || (claims.Type != "user") {
 		ErrForbidden(ctx, "权限错误")
 		return
 	}
+
+	// 查询用户信息
 	var user entity.User
 	err = repo.DBDao.First(&user, "id = ? AND is_delete = 0 ", id).Error
 	if err == gorm.ErrRecordNotFound {
@@ -425,6 +697,27 @@ func (c *UserController) updateAvatar(ctx *gin.Context) {
 		return
 	}
 }
+
+/**
+@api {GET} /api/user/avatar 获取用户头像
+@apiDescription 获取用户头像。
+
+@apiName UserAvatar
+@apiGroup User
+
+@apiPermission 用户
+
+@apiParam {Integer} id 用户ID。
+
+@apiParamExample {http} 请求示例
+
+GET /api/user/avatar?id=1
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+权限错误
+*/
 
 // avatar 获取用户头像
 func (c *UserController) avatar(ctx *gin.Context) {
@@ -462,6 +755,29 @@ func (c *UserController) avatar(ctx *gin.Context) {
 		return
 	}
 }
+
+/**
+@api {DELETE} /api/user/delete 删除用户
+@apiDescription 删除用户，如果存在多个用户，其中某个用户删除失败，依然返回200状态码。
+该接口仅在数据库操作异常时返回500系统错误的状态码，其他情况均返回200。
+@apiName UserDelete
+@apiGroup User
+
+@apiPermission 管理员
+
+@apiParam {String} ids 待删除的ID序列，多个ID用","隔开，如：ids=1,99。
+
+@apiParamExample 请求示例
+DELETE /api/user/delete?ids=12,24
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // delete 删除用户
 func (c *UserController) delete(ctx *gin.Context) {

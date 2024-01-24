@@ -34,6 +34,8 @@ func NewNoteController(router gin.IRouter) *NoteController {
 	r.GET("/info", User, res.info)
 	// 获取笔记列表
 	r.GET("/noteList", Authed, res.noteList)
+	// 笔记重命名
+	r.POST("/rename", User, res.rename)
 	// 更新笔记内容
 	r.POST("/content", User, res.contentPost)
 	// 获取笔记内容
@@ -42,8 +44,8 @@ func NewNoteController(router gin.IRouter) *NoteController {
 	r.POST("/assert", User, res.assertPost)
 	// 下载笔记资源
 	r.GET("/assert", User, res.assertGet)
-	// 修改笔记分组
-	r.GET("/group", User, res.Group)
+	// 保存笔记至文件夹
+	r.GET("/group", User, res.group)
 	// 获取笔记编辑锁
 	r.POST("/lock", User, res.lock)
 	// 取消编辑
@@ -69,24 +71,25 @@ type NoteController struct {
 
 @apiPermission 用户
 
-@apiHeader {String} Content-type multipart/form-data 多类型表单固定值。
 
 
 @apiParam {String} title 笔记名。
 @apiParam {Integer} priority 优先级，默认为0，数值越大优先级越高显示位置越靠前。
-@apiParam {String} tags 标签。
+@apiParam {Integer} folderId 文件夹ID。
 
+@apiParamExample {json} 请求示例
+{
+    "title":"日报",
+	"priority":0,
+	"folderId":0
+}
 
 @apiSuccess {Integer} id 文档记录ID。
-@apiSuccess {[]String} tags 标签。
 
 @apiSuccessExample 成功响应
 HTTP/1.1 200 OK
 
-{
-	"id":1,
-	"tags":"运维,常见问题,测试,分享"
-}
+1
 
 @apiErrorExample 失败响应
 HTTP/1.1 400 Bad Request
@@ -137,24 +140,24 @@ func (c *NoteController) create(ctx *gin.Context) {
 		return
 	}
 
+	// 笔记记录 赋值
 	note.UserId = claims.Sub
 	note.TitlePy = str
 	note.Priority = noteCreateDto.Priority
-	//note.Tags = noteCreateDto.Tags
 	note.IsDelete = 0
 
-	result := ""
 	err = repo.DBDao.Transaction(func(tx *gorm.DB) error {
 		// 创建笔记记录
-		err = tx.Create(&note).Error
-		if err != nil {
-			return err
+		dberr := tx.Create(&note).Error
+		if dberr != nil {
+			return dberr
 		}
+
 		// 创建文件目录
 		notePath := filepath.Join(dir.NoteDir, strconv.Itoa(note.ID))
-		err = os.MkdirAll(notePath, os.ModePerm)
-		if err != nil {
-			return err
+		dberr = os.MkdirAll(notePath, os.ModePerm)
+		if dberr != nil {
+			return dberr
 		}
 		// 生成文件名称
 		now := time.Now().Format("20060102150405")
@@ -162,14 +165,16 @@ func (c *NoteController) create(ctx *gin.Context) {
 		filename := fmt.Sprintf("%s%s.md", now, r)
 		note.Filename = filename
 		docFile := filepath.Join(notePath, note.Filename)
-		_, err = os.Create(docFile)
-		if err != nil {
-			return err
+		// 生成文件
+		_, dberr = os.Create(docFile)
+		if dberr != nil {
+			return dberr
 		}
+		// 更新文件信息
 		find := tx.Where("id", note.ID).Find(&entity.Note{})
-		err := find.Update("filename", note.Filename).Error
-		if err != nil {
-			return err
+		dberr = find.Update("filename", note.Filename).Error
+		if dberr != nil {
+			return dberr
 		}
 
 		// 生成笔记成员记录
@@ -177,38 +182,10 @@ func (c *NoteController) create(ctx *gin.Context) {
 		noteMember.Role = 0
 		noteMember.UserId = claims.Sub
 		noteMember.NoteId = note.ID
-		noteMember.NoteGroup = noteCreateDto.Tags
-		err = tx.Create(&noteMember).Error
-		if err != nil {
-			return err
-		}
-
-		// 更新组信息
-		if noteCreateDto.Tags != "" {
-			var usr entity.User
-			err = repo.DBDao.First(&usr, "id = ?", claims.Sub).Error
-			if err != nil {
-				return err
-			}
-			tags := strings.Split(usr.NoteTags, ",")
-			noteTags := strings.Split(noteCreateDto.Tags, ",")
-			tags = append(tags, noteTags...)
-
-			temp := map[string]struct{}{}
-			for _, item := range tags {
-				if _, ok := temp[item]; !ok {
-					temp[item] = struct{}{}
-					if result == "" {
-						result = fmt.Sprintf("%s", item)
-					} else {
-						result = fmt.Sprintf("%s,%s", result, item)
-					}
-				}
-			}
-			err = repo.DBDao.Model(&usr).Where("id", claims.Sub).Update("note_tags", result).Error
-			if err != nil {
-				return err
-			}
+		noteMember.FolderId = noteCreateDto.FolderId
+		dberr = tx.Create(&noteMember).Error
+		if dberr != nil {
+			return dberr
 		}
 
 		return nil
@@ -218,11 +195,7 @@ func (c *NoteController) create(ctx *gin.Context) {
 		return
 	}
 
-	var info dto.NoteIDDto
-	info.ID = note.ID
-	info.Tags = strings.Split(result, ",")
-
-	ctx.JSON(200, info)
+	ctx.JSON(200, note.ID)
 }
 
 /**
@@ -246,6 +219,7 @@ GET /api/note/info?id=13
 @apiSuccess {String} tags 标签。
 @apiSuccess {Integer} role 用户权限。
 @apiSuccess {Integer} isDelete 用户权限。
+@apiSuccess {Integer} folderId 所属文件夹ID
 
 
 @apiSuccessExample 成功响应
@@ -294,7 +268,6 @@ func (c *NoteController) info(ctx *gin.Context) {
 		return
 	}
 	info.UpdatedAt = note.UpdatedAt
-	//info.Tags = note.Tags
 	info.ID = note.ID
 
 	// 判断是否拥有笔记权限
@@ -312,6 +285,7 @@ func (c *NoteController) info(ctx *gin.Context) {
 	info.Remark = noteMember.Remark
 	info.Title = note.Title
 	info.IsDelete = note.IsDelete
+	info.FolderId = noteMember.FolderId
 
 	// 获取笔记拥有者信息
 	err = repo.DBDao.First(&user, "id = ? AND is_delete = 0 ", note.UserId).Error
@@ -324,6 +298,13 @@ func (c *NoteController) info(ctx *gin.Context) {
 		return
 	}
 	info.UserName = user.Name
+
+	// 获取文件夹信息
+	info.FolderName, err = repo.FolderRepo.GetFolderFullPath(noteMember.FolderId, claims.Sub, "")
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
 
 	ctx.JSON(200, &info)
 }
@@ -342,11 +323,11 @@ func (c *NoteController) info(ctx *gin.Context) {
 @apiParam {Integer} page 页数
 @apiParam {Integer} isDelete 是否删除
 @apiParam {Integer} group 用户组ID
-@apiParam {String} tag 标签
+@apiParam {Integer} folder 文件夹ID
 
 @apiParamExample {http} 请求示例
 
-GET /api/note/noteList?role=255&keyword=1&page=1&isDelete=0&group=1&tag=%E8%BF%90%E7%BB%B4
+GET /api/note/noteList?role=255&keyword=1&page=1&isDelete=0&group=1
 
 @apiSuccess {NoteInfo[]} records 查询结果列表。
 @apiSuccess {Integer} total 记录总数。
@@ -358,10 +339,10 @@ GET /api/note/noteList?role=255&keyword=1&page=1&isDelete=0&group=1&tag=%E8%BF%9
 @apiSuccess {Integer} NoteInfo.id 笔记ID。
 @apiSuccess {String} NoteInfo.title 标题。
 @apiSuccess {String} NoteInfo.remark 备注。
-@apiSuccess {String} NocInfo.username 笔记拥有者名称。
-@apiSuccess {String} NocInfo.tags 标签
+@apiSuccess {String} NoteInfo.username 笔记拥有者名称。
 @apiSuccess {Integer} NoteInfo.role 权限
-@apiSuccess {String} NocInfo.updatedAt 更新时间
+@apiSuccess {String} NoteInfo.updatedAt 更新时间
+@apiSuccess {Integer} NoteInfo.folderId 文件夹ID
 
 @apiSuccessExample 成功响应
 HTTP/1.1 200 OK
@@ -373,17 +354,17 @@ HTTP/1.1 200 OK
 		"title": "测试文档",
 		"remark": "",
 		"username": "王沁涛",
-		"tags": "运维",
 		"role": 0,
-		"updatedAt": "2023-03-22 16:06:05"
+		"updatedAt": "2023-03-22 16:06:05",
+		"folderId":0
 	}, {
 		"id": 7,
 		"title": "标签测试",
 		"remark": "",
 		"username": "王沁涛",
-		"tags": "运维,常见问题,测试",
 		"role": 0,
-		"updatedAt": "2023-03-21 14:24:12"
+		"updatedAt": "2023-03-21 14:24:12",
+		"folderId":0
 	}],
 	"total": 2,
 	"size": 13,
@@ -402,23 +383,26 @@ HTTP/1.1 400 Bad Request
 // noteList 获取笔记列表
 func (c *NoteController) noteList(ctx *gin.Context) {
 	keyword := ctx.Query("keyword")
+	// 笔记权限
 	role, _ := strconv.Atoi(ctx.DefaultQuery("role", "255"))
-	tag := ctx.Query("tag")
-	group, _ := strconv.Atoi(ctx.DefaultQuery("group", "255"))
-
-	isDelete, _ := strconv.Atoi(ctx.Query("isDelete"))
-
+	// 文件夹ID
+	folder, _ := strconv.Atoi(ctx.DefaultQuery("folder", "0"))
+	// 用户组ID
+	group, _ := strconv.Atoi(ctx.DefaultQuery("group", "0"))
+	// 是否删除
+	isDelete, _ := strconv.Atoi(ctx.DefaultQuery("isDelete", "0"))
+	// 页面
 	page, err := strconv.Atoi(ctx.DefaultQuery("page", "1"))
 	if err != nil {
 		ErrIllegal(ctx, "参数非法，无法解析")
 		return
 	}
+	// 每页页数
 	limit, err := strconv.Atoi(ctx.DefaultQuery("limit", "13"))
 	if err != nil {
 		ErrIllegal(ctx, "参数非法，无法解析")
 		return
 	}
-
 	// 获取用户信息
 	claimsValue, _ := ctx.Get(middle.FlagClaims)
 	claims := claimsValue.(*jwt.Claims)
@@ -429,12 +413,13 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 		//	LEFT JOIN notes ON notes.id = note_members.note_id
 		//	RIGHT JOIN users on users.id = note_members.user_id
 		db = db.Table("note_members").
-			Select("notes.id AS id ,notes.updated_at,notes.title,note_members.remark,users.`name` AS username, note_members.note_group ,note_members.role ").
+			Select("notes.id AS id ,notes.updated_at,notes.title,note_members.remark,users.`name` AS username, note_members.role , note_members.folder_id").
 			Joins("LEFT JOIN notes ON notes.id = note_members.note_id").Joins("RIGHT JOIN users on users.id = note_members.user_id")
 
 		// 前端数据展示排序
 		db = db.Order("updated_at desc")
 
+		// 用户类型
 		if claims.Type == "user" {
 			db = db.Where("note_members.user_id = ? ", claims.Sub)
 		} else if claims.Type == "admin" {
@@ -442,10 +427,12 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 			return db
 		}
 
+		// 关键字查询 - 标题、标题拼音
 		if keyword != "" {
 			db = db.Where("notes.title like ? OR notes.title_py like ?", fmt.Sprintf("%%%s%%", keyword), fmt.Sprintf("%%%s%%", keyword))
 		}
 
+		// 是否删除
 		if isDelete != 0 {
 			db = db.Where("note_members.user_id = ? AND notes.user_id = ? AND notes.is_delete = ?", claims.Sub, claims.Sub, isDelete)
 			return db
@@ -453,18 +440,21 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 			db = db.Where("notes.is_delete = 0")
 		}
 
-		if group != 255 {
+		// 用户组
+		if group != 0 {
 			db = db.Where("note_members.group_id = ?", group)
 		}
 
+		// 用户权限
 		if role == 254 {
 			db = db.Where("note_members.role = 1 OR note_members.role = 2")
 		} else if role != 255 {
 			db = db.Where("note_members.role = ? ", role)
 		}
 
-		if tag != "" {
-			db = db.Where("note_members.note_group like ?", fmt.Sprintf("%%%s%%", tag))
+		// 文件夹
+		if folder != 0 {
+			db = db.Where("note_members.folder_id = ?", folder)
 		}
 
 		return db
@@ -476,13 +466,12 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 	}
 
 	query.Records = noteList
-
 	ctx.JSON(200, query)
 }
 
 /**
 @api {POST} /api/note/content 更新文档内容
-@apiDescription 以表单的方式上传新的文档内容替换原有的文档内容。
+@apiDescription 更新文档内容
 
 注意文档内容仅由项目成员可以更新，非项目成员返回无权限访问错误。
 
@@ -491,7 +480,6 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 
 @apiPermission 用户
 
-@apiHeader {String} Content-type multipart/form-data 多类型表单固定值。
 
 @apiParam {Integer} docId 文档ID。
 @apiParam {Integer} projectId 项目ID。
@@ -504,12 +492,22 @@ func (c *NoteController) noteList(ctx *gin.Context) {
 @apiParam {String} content 文档内容，当文档类型为markdown时使用该字段更新文档。
 @apiParam {Boolean} autoSave 是否自动保存
 
+@apiParamExample {json} 请求示例
+{
+    "docId":1,
+	"projectId":5,
+	"title":"测试",
+	"query":"file",
+	"content":"te...ng",
+	"autoSave":false
+}
+
+
 @apiSuccess {Integer} body 文档记录ID。
 
 
 @apiSuccessExample 成功响应
 HTTP/1.1 200 OK
-
 13
 
 @apiErrorExample 失败响应
@@ -574,7 +572,9 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 		return
 	}
 
+	// 获取修改后的内容信息
 	content := ctx.PostForm("content")
+	// 判断是否为自动保存
 	autoSave, err := strconv.ParseBool(ctx.PostForm("autoSave"))
 	if err != nil {
 		ErrIllegal(ctx, "参数非法，无法解析")
@@ -584,7 +584,9 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 	// 判断用户是否拥有读写锁
 	// 获取拥有该锁的用户ID
 	v := editLock.Query(id)
+	// 若非自动保存
 	if autoSave == false {
+		// 处理 同一笔记 同一用户 在多处打开 问题
 		if v.UserId == claims.Sub && v.Exp != claims.Exp {
 			ErrIllegal(ctx, fmt.Sprintf("该笔记已在别处打开"))
 			return
@@ -597,16 +599,17 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 			ErrIllegal(ctx, fmt.Sprintf("无该笔记编辑锁"))
 			return
 		} else {
-			repo.DBDao.Where("id", v).Find(&user)
+			repo.DBDao.Where("id", v.UserId).Find(&user)
 			ErrIllegal(ctx, fmt.Sprintf("%s正在编辑该笔记", user.Name))
 			return
 		}
 	} else {
+		// 处理 同一笔记 同一用户 在多处打开 问题
 		if v.UserId == claims.Sub && v.Exp != claims.Exp {
 			ErrIllegal(ctx, fmt.Sprintf("该笔记已在别处打开"))
 			return
 		} else if v.UserId != claims.Sub && v.UserId != middle.NoLock {
-			repo.DBDao.Where("id", v).Find(&user)
+			repo.DBDao.Where("id", v.UserId).Find(&user)
 			ErrIllegal(ctx, fmt.Sprintf("%s正在编辑该笔记", user.Name))
 			return
 		} else if v.UserId == middle.NoLock {
@@ -630,16 +633,17 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 	// 防止删除文件本身
 	fileContent := fmt.Sprintf("(%s &file=%s)", content, note.Filename)
 
-	// 删除文件中未被引用的笔记资源
-	err = reuint.DeleteUnreferencedFiles(fileContent, filepath.Join(dir.NoteDir, id))
-	if err != nil {
-		ErrSys(ctx, err)
-		return
+	// 手动保存情况下，删除文件中未被引用的笔记资源
+	if autoSave == false {
+		err = reuint.DeleteUnreferencedFiles(fileContent, filepath.Join(dir.NoteDir, id))
+		if err != nil {
+			ErrSys(ctx, err)
+			return
+		}
 	}
 
 	// 带缓冲区的*Writer
 	writer := bufio.NewWriter(file)
-
 	_, err = writer.WriteString(content)
 	if err != nil {
 		ErrSys(ctx, err)
@@ -653,10 +657,26 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 		return
 	}
 
-	err = repo.DBDao.Where("id", note.ID).Find(&entity.Note{}).Update("title", title).Error
-	if err != nil {
-		ErrSys(ctx, err)
-		return
+	// 若笔记名称发生变化
+	if note.Title != title {
+		// 若该用户笔记名已存在，则生成随机数在笔记名后
+		err = repo.DBDao.First(&entity.Note{}, "title = ? AND user_id = ? ", title, claims.Sub).Error
+		if err == gorm.ErrRecordNotFound {
+			note.Title = title
+		} else if err != nil {
+			ErrSys(ctx, err)
+			return
+		} else if err == nil {
+			// 生成随机数
+			r := fmt.Sprintf("%04v", rand.New(rand.NewSource(time.Now().UnixNano())).Int31n(10000))
+			title = fmt.Sprintf("%s%s", title, r)
+		}
+
+		err = repo.DBDao.Where("id", note.ID).Find(&entity.Note{}).Update("title", title).Error
+		if err != nil {
+			ErrSys(ctx, err)
+			return
+		}
 	}
 
 	err = repo.DBDao.Where("note_id", note.ID).Where("user_id", claims.Sub).Find(&entity.NoteMember{}).Update("remark", remark).Error
@@ -666,6 +686,37 @@ func (c *NoteController) contentPost(ctx *gin.Context) {
 	}
 
 }
+
+/**
+@api {Get} /api/note/content 获取文档内容
+@apiDescription 获取文档内容
+
+@apiName NoteContentGET
+@apiGroup Note
+
+@apiPermission 用户
+
+
+@apiParam {Integer} id 文档ID。
+
+
+@apiParamExample {json} 请求示例
+
+/api/note/content?id=5
+
+@apiSuccess {String} content 文档内容。
+
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+功能....请参考上述内容。
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // contentGet 获取笔记内容
 func (c *NoteController) contentGet(ctx *gin.Context) {
@@ -680,6 +731,7 @@ func (c *NoteController) contentGet(ctx *gin.Context) {
 	claimsValue, _ := ctx.Get(middle.FlagClaims)
 	claims := claimsValue.(*jwt.Claims)
 
+	// 获取用户笔记权限
 	role, err := repo.NoteMemberRepo.Check(claims.Sub, id)
 	if err != nil {
 		ErrSys(ctx, err)
@@ -690,6 +742,7 @@ func (c *NoteController) contentGet(ctx *gin.Context) {
 		return
 	}
 
+	// 查询笔记信息
 	var note entity.Note
 	err = repo.DBDao.First(&note, "id = ? ", id).Error
 	if err == gorm.ErrRecordNotFound {
@@ -702,6 +755,7 @@ func (c *NoteController) contentGet(ctx *gin.Context) {
 
 	filePath := filepath.Join(dir.NoteDir, strconv.Itoa(id), note.Filename)
 
+	// 读取文件内容
 	file, err := os.Open(filePath)
 	if err != nil {
 		ErrSys(ctx, err)
@@ -716,6 +770,49 @@ func (c *NoteController) contentGet(ctx *gin.Context) {
 	ctx.JSON(200, string(content))
 
 }
+
+/**
+@api {POST} /api/note/assert 上传文档资源
+@apiDescription 以表单的方式上传文档相关的图片或附件，文件上传后台需要判断文档类型是图片还是附件类型。
+
+注意文档资源仅由项目成员可以使用，非项目成员返回无权限访问错误。
+
+文件上传后返回资源的类型以及，资源访问的路径。
+
+资源访问路径为文档资源的下载接口，格式为: "/api/note/assert?id=xxxx&file=202210131620160001.png"
+
+资源文件名格式为：`YYYYMMDDHHmmss` + `4位随机数`
+
+@apiName NoteAssertPOST
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiHeader {String} Content-type multipart/form-data 多类型表单固定值。
+
+@apiParam {Integer} id 文档ID。
+@apiParam {File} file 资源文件，文档相关的图片或文件附件。
+
+@apiSuccess {String} type 资源类型
+<ul>
+	<li>image</li>
+	<li>file</li>
+</ul>
+@apiSuccess {String} uri 资源访问地址，资源访问路径为文档资源的下载接口，格式为: "/api/note/assert?id=xxxx&file=202210131620160001.png"
+
+@apiSuccessExample {json} 成功响应
+HTTP/1.1 200 OK
+
+	{
+	    "type": "image",
+	    "uri": "/api/note/assert?id=xxxx&file=202210131620160001.png"
+	}
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数非法，无法解析
+*/
 
 // assertPost 上传笔记资源
 func (c *NoteController) assertPost(ctx *gin.Context) {
@@ -738,7 +835,8 @@ func (c *NoteController) assertPost(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
-	if role == -1 || role == 1 {
+	// 若用户无权限
+	if role != 0 && role != 2 {
 		ErrIllegal(ctx, "无权限")
 		return
 	}
@@ -758,6 +856,7 @@ func (c *NoteController) assertPost(ctx *gin.Context) {
 		noteUri.DocType = "file"
 	}
 
+	// 生成随机文件名称
 	filename := reuint.GenTimeFileName(file.Filename)
 
 	filePath := filepath.Join(dir.NoteDir, id, filename)
@@ -771,6 +870,28 @@ func (c *NoteController) assertPost(ctx *gin.Context) {
 	noteUri.Uri = uri
 	ctx.JSON(200, noteUri)
 }
+
+/**
+@api {GET} /api/note/assert 下载文档资源
+@apiDescription 下载文档相关的资源。
+
+@apiName NoteAssertGET
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {Integer} id 文档ID。
+@apiParam {String} file 文件名称。
+
+@apiParamExample {http} 请求示例
+
+GET /api/note/assert?id=xxxx&file=202210131620160001.png
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+权限错误
+*/
 
 // assert 下载笔记资源
 func (c *NoteController) assertGet(ctx *gin.Context) {
@@ -816,6 +937,33 @@ func (c *NoteController) assertGet(ctx *gin.Context) {
 	}
 }
 
+/**
+@api {POST} /api/note/lock 获取文档编辑锁
+@apiDescription 获取文档编辑锁
+@apiName NoteLock
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {Integer} userId 用户ID
+@apiParam {Integer} id        文档ID
+
+@apiParamExample {json} 请求示例
+
+	{
+	    "userId": 2,
+		"id":3,
+	}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+权限错误
+*/
+
 // lock 获取笔记编辑锁
 func (c *NoteController) lock(ctx *gin.Context) {
 	var lockDto dto.LockDto
@@ -832,13 +980,15 @@ func (c *NoteController) lock(ctx *gin.Context) {
 		return
 	}
 
+	// 判断用户是否 拥有笔记权限
 	id, _ := strconv.Atoi(lockDto.Id)
 	role, err := repo.NoteMemberRepo.Check(lockDto.UserId, id)
 	if err != nil {
 		ErrSys(ctx, err)
 		return
 	}
-	if role == -1 || role == 1 {
+	// 若用户无权限
+	if role != 0 && role != 2 {
 		ErrIllegal(ctx, "无权限")
 		return
 	}
@@ -850,11 +1000,38 @@ func (c *NoteController) lock(ctx *gin.Context) {
 		editLock.Lock(ctx, lockDto.Id, lockDto.UserId)
 		ctx.JSON(200, "获取到锁")
 	} else {
-		repo.DBDao.Where("id", v).Find(&user)
+		repo.DBDao.Where("id", v.UserId).Find(&user)
 		ErrIllegal(ctx, fmt.Sprintf("%s正在编辑该笔记", user.Name))
 		return
 	}
 }
+
+/**
+@api {POST} /api/note/cancel 取消编辑
+@apiDescription 取消编辑
+@apiName NoteCancel
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {Integer} userId 用户ID
+@apiParam {Integer} id     文档ID
+
+@apiParamExample {json} 请求示例
+
+	{
+	    "userId": 2,
+		"id":3,
+	}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+参数解析错误
+*/
 
 // cancel 取消编辑
 func (c *NoteController) cancel(ctx *gin.Context) {
@@ -919,6 +1096,27 @@ func (c *NoteController) cancel(ctx *gin.Context) {
 	ctx.JSON(200, string(content))
 }
 
+/**
+@api {GET} /api/note/export 导出文档
+@apiDescription 导出文档。
+
+@apiName NoteExport
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {String} id 文档ID。
+
+@apiParamExample {http} 请求示例
+
+GET /api/note/export?id=46
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+权限错误
+*/
+
 // export 导出笔记
 func (c *NoteController) export(ctx *gin.Context) {
 	var note entity.Note
@@ -938,6 +1136,7 @@ func (c *NoteController) export(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
+	// 若用户未拥有笔记编辑权限
 	if role == -1 || role == 1 {
 		ErrIllegal(ctx, "无权限")
 		return
@@ -1025,8 +1224,30 @@ func (c *NoteController) export(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
-
 }
+
+/**
+@api {DELETE} /api/note/delete 删除文档
+@apiDescription doc，删除文档。
+该接口仅在数据库操作异常时返回500系统错误的状态码，其他情况均返回200。
+@apiName NoteDelete
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {String} id 文档ID。
+
+@apiParamExample 请求示例
+DELETE /api/note/delete?id=12
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // delete 删除笔记
 func (c *NoteController) delete(ctx *gin.Context) {
@@ -1050,11 +1271,13 @@ func (c *NoteController) delete(ctx *gin.Context) {
 		ErrSys(ctx, err)
 		return
 	}
-	if role == -1 || role == 1 || role == 2 {
+	// 若用户不是笔记拥有者
+	if role != 0 {
 		ErrIllegal(ctx, "无权限")
 		return
 	}
 
+	// 将 笔记 记录 中 is_delete 字段 修改为 1
 	err = repo.DBDao.Where("id", noteId).Find(&entity.Note{}).Update("is_delete", 1).Error
 	if err != nil {
 		ErrSys(ctx, err)
@@ -1062,6 +1285,29 @@ func (c *NoteController) delete(ctx *gin.Context) {
 	}
 
 }
+
+/**
+@api {GET} /api/note/restore 恢复文档
+@apiDescription 恢复文档。
+该接口仅在数据库操作异常时返回500系统错误的状态码，其他情况均返回200。
+@apiName NoteRestore
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {String} id 文档ID。
+
+@apiParamExample 请求示例
+DELETE /api/note/restore?id=12
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
 
 // restore 恢复笔记
 func (c *NoteController) restore(ctx *gin.Context) {
@@ -1087,12 +1333,14 @@ func (c *NoteController) restore(ctx *gin.Context) {
 			ErrSys(ctx, err)
 			return
 		}
-		if role == -1 || role == 1 || role == 2 {
+		// 若用户非该笔记拥有者
+		if role != 0 {
 			ErrIllegal(ctx, "无权限")
 			return
 		}
 	}
 
+	// 将 笔记 记录 中 is_delete 字段 修改为 1
 	err := repo.DBDao.Where("id", noteId).Find(&entity.Note{}).Update("is_delete", 0).Error
 	if err != nil {
 		ErrSys(ctx, err)
@@ -1101,8 +1349,32 @@ func (c *NoteController) restore(ctx *gin.Context) {
 
 }
 
-// Group 用户分组
-func (c *NoteController) Group(ctx *gin.Context) {
+/**
+@api {GET} /api/note/group 保存笔记至文件夹
+@apiDescription 保存笔记至文件夹。
+
+@apiName NoteGroup
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {Integer} id 文档ID。
+@apiParam {Integer} group 组ID。
+
+@apiParamExample 请求示例
+DELETE /api/note/group?id=12&group=5
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
+// group 保存笔记至文件夹
+func (c *NoteController) group(ctx *gin.Context) {
 	id := ctx.Query("id")
 	noteGroup := ctx.Query("group")
 	// 获取用户信息
@@ -1110,52 +1382,114 @@ func (c *NoteController) Group(ctx *gin.Context) {
 	claims := claimsValue.(*jwt.Claims)
 
 	noteId, _ := strconv.Atoi(id)
-	if noteId <= 0 || noteGroup == "" {
+	groupId, _ := strconv.Atoi(noteGroup)
+
+	if noteId <= 0 || groupId < 0 {
 		ErrIllegal(ctx, "参数解析错误")
 		return
 	}
-	// 修改笔记
-	var noteMember entity.NoteMember
-	err := repo.DBDao.First(&noteMember, "user_id = ? AND note_id = ?", claims.Sub, noteId).Error
-	if err == gorm.ErrRecordNotFound {
-		ErrIllegal(ctx, "用户未有该笔记权限")
-		return
-	} else if err != nil {
+	// 修改笔记成员组 文件ID
+	err := repo.DBDao.Where("user_id = ? AND note_id = ?", claims.Sub, noteId).Find(&entity.NoteMember{}).Update("folder_id", groupId).Error
+	if err != nil {
 		ErrSys(ctx, err)
 		return
 	}
-	err = repo.DBDao.Where("user_id = ? AND note_id = ?", claims.Sub, noteId).Find(&entity.NoteMember{}).Update("note_group", noteGroup).Error
+}
+
+/**
+@api {POST} /api/note/rename 笔记重命名
+@apiDescription 笔记重命名
+@apiName NoteRename
+@apiGroup Note
+
+@apiPermission 用户
+
+@apiParam {Integer} id        文档ID
+@apiParam {String} title 文档名称
+
+@apiParamExample {json} 请求示例
+
+	{
+	    "id": 2,
+		"title":“重命名”,
+	}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 400 Bad Request
+
+权限错误
+*/
+
+// rename 文件重命名
+func (c *NoteController) rename(ctx *gin.Context) {
+
+	var noteInfo dto.NoteRenameDto
+
+	err := ctx.BindJSON(&noteInfo)
+	if err != nil {
+		ErrIllegal(ctx, "参数解析错误")
+		return
+	}
+
+	if noteInfo.Title == "" {
+		ErrIllegal(ctx, "文档名称不可为空")
+		return
+	}
+
+	// 判断是否拥有权限
+	claimsValue, _ := ctx.Get(middle.FlagClaims)
+	claims := claimsValue.(*jwt.Claims)
+	role, err := repo.NoteMemberRepo.Check(claims.Sub, noteInfo.ID)
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+	if role == -1 {
+		ErrIllegal(ctx, "无权限")
+		return
+	}
+
+	var note entity.Note
+
+	// 获取笔记信息
+	err = repo.DBDao.First(&note, "id = ?", noteInfo.ID).Error
+	if err == gorm.ErrRecordNotFound {
+		ErrIllegal(ctx, "该笔记不存在或被删除")
+		return
+	}
 	if err != nil {
 		ErrSys(ctx, err)
 		return
 	}
 
-	// 修改用户
-	var usr entity.User
-	err = repo.DBDao.First(&usr, "id = ?", claims.Sub).Error
-	if err != nil {
-		ErrSys(ctx, err)
-		return
-	}
-	tags := strings.Split(usr.NoteTags, ",")
-	noteTags := strings.Split(noteGroup, ",")
-	tags = append(tags, noteTags...)
-	result := ""
-	temp := map[string]struct{}{}
-	for _, item := range tags {
-		if _, ok := temp[item]; !ok {
-			temp[item] = struct{}{}
-			if result == "" {
-				result = fmt.Sprintf("%s", item)
-			} else {
-				result = fmt.Sprintf("%s,%s", result, item)
-			}
+	// 若用户仅可修改备注
+	if role != 0 {
+		err = repo.DBDao.Where("note_id", note.ID).Where("user_id", claims.Sub).Find(&entity.NoteMember{}).Update("remark", noteInfo.Title).Error
+		if err != nil {
+			ErrSys(ctx, err)
+			return
+		}
+	} else {
+		// 若该用户笔记名已存在，则生成随机数在笔记名后
+		err = repo.DBDao.First(&entity.Note{}, "title = ? AND user_id = ? ", noteInfo.Title, claims.Sub).Error
+		if err == gorm.ErrRecordNotFound {
+			note.Title = noteInfo.Title
+		} else if err != nil {
+			ErrSys(ctx, err)
+			return
+		} else if err == nil {
+			// 生成随机数
+			r := fmt.Sprintf("%04v", rand.New(rand.NewSource(time.Now().UnixNano())).Int31n(10000))
+			note.Title = fmt.Sprintf("%s%s", noteInfo.Title, r)
+		}
+
+		err = repo.DBDao.Save(note).Error
+		if err != nil {
+			ErrSys(ctx, err)
+			return
 		}
 	}
-	err = repo.DBDao.Model(&usr).Where("id", claims.Sub).Update("note_tags", result).Error
-	if err != nil {
-		ErrSys(ctx, err)
-	}
-
-	ctx.JSON(200, strings.Split(result, ","))
 }

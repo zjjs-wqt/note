@@ -95,10 +95,10 @@ func (c *SsoController) redirect(ctx *gin.Context) {
 	}
 
 	// 生成用户token进入主页
-	claims := jwt.Claims{Type: "user", Sub: user.ID, Exp: time.Now().Add(8 * time.Hour).UnixMilli()}
+	claims := jwt.Claims{Type: "user", Sub: user.ID, Exp: time.Now().Add(10 * time.Hour).UnixMilli()}
 	token := tokenManager.GenToken(&claims)
 	// 设置头部 Cookies 有效时间为8小时
-	ctx.SetCookie("token", token, 8*3600, "", "", false, true)
+	ctx.SetCookie("token", token, 10*3600, "", "", false, true)
 
 	ctx.Redirect(http.StatusMovedPermanently, "/ui/#/index/noteList")
 }

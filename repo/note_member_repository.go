@@ -10,7 +10,7 @@ import (
 type NoteMemberRepository struct {
 }
 
-// Check 检查用户权限
+// Check 检查用户权限 -1 - 无权限 1 - 可查看 2 - 可编辑
 func (r *NoteMemberRepository) Check(userId int, noteId int) (int, error) {
 
 	var res entity.NoteMember
@@ -51,6 +51,32 @@ func (r *NoteMemberRepository) Exist(id int, noteId int, shareType string) (bool
 	}
 
 	return true, nil
+}
+
+// GetFolderNotes 获取当前文件夹下的笔记
+func (r *NoteMemberRepository) GetFolderNotes(userId int, folderId int) ([]entity.NoteMember, error) {
+	if userId <= 0 || folderId <= 0 {
+		return nil, errors.New("参数错误")
+	}
+	noteMembers := []entity.NoteMember{}
+	err := DBDao.Where("user_id = ? AND folder_id = ?", userId, folderId).Find(&noteMembers).Error
+	if err != nil {
+		return nil, err
+	}
+	return noteMembers, nil
+}
+
+// GetFolderOwnerNotes 获取当前文件夹下的自己的笔记
+func (r *NoteMemberRepository) GetFolderOwnerNotes(userId int, folderId int) ([]entity.NoteMember, error) {
+	if userId <= 0 || folderId <= 0 {
+		return nil, errors.New("参数错误")
+	}
+	noteMembers := []entity.NoteMember{}
+	err := DBDao.Where("user_id = ? AND folder_id = ? AND role = 0", userId, folderId).Find(&noteMembers).Error
+	if err != nil {
+		return nil, err
+	}
+	return noteMembers, nil
 }
 
 func NewNoteMemberRepository() *NoteMemberRepository {
