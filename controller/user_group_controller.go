@@ -32,6 +32,10 @@ func NewUserGroupController(router gin.IRouter) *UserGroupController {
 	r.GET("/list", User, res.list)
 	// 查询用户组用户权限
 	r.GET("/role", User, res.role)
+	// 查询用户组信息
+	r.GET("/info", User, res.info)
+	// 修改用户组名称
+	r.POST("/rename", User, res.rename)
 	return res
 }
 
@@ -688,4 +692,180 @@ func (c *UserGroupController) role(ctx *gin.Context) {
 	}
 
 	ctx.JSON(200, tmp.Role)
+}
+
+/**
+@api {GET} /api/userGroup/info 查询用户组信息
+@apiDescription 查询用户组信息
+@apiName UserGroupInfo
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} groupId 用户组ID
+
+@apiParamExample 请求示例
+GET /api/userGroup/info?groupId=2
+
+@apiSuccess  {Integer} 	id 用户组ID。
+@apiSuccess  {String}  	createdAt 创建时间
+@apiSuccess  {String}  	name 用户组名称
+@ApiSuccess  {String}	namePy 用户组名称拼音
+@ApiSuccess  {String}	description 描述
+@ApiSuccess  {String}	tags 标签
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+{
+	id:2,
+	createdAt:"2024-01-03 14:22:51",
+	name:"测试用户组23333222222",
+	namePy:"csyhz",
+	description:"",
+	tags:""
+}
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
+// info 查询用户组信息
+func (c *UserGroupController) info(ctx *gin.Context) {
+	groupId, _ := strconv.Atoi(ctx.Query("groupId"))
+	if groupId <= 0 {
+		ErrIllegal(ctx, "参数非法，无法解析")
+		return
+	}
+
+	// 获取用户信息
+	claimsValue, _ := ctx.Get(middle.FlagClaims)
+	claims := claimsValue.(*jwt.Claims)
+
+	var tmp entity.GroupMember
+
+	// 检查用户权限
+	err := repo.DBDao.First(&tmp, "user_id = ? AND belong = ?", claims.Sub, groupId).Error
+	if err == gorm.ErrRecordNotFound {
+		ErrIllegal(ctx, "用户无权限")
+		return
+	}
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	// 获取用户组信息
+	var group entity.UserGroup
+
+	err = repo.DBDao.First(&group, "id = ?", groupId).Error
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	ctx.JSON(200, &group)
+
+}
+
+/**
+@api {POST} /api/userGroup/rename 用户组重命名
+@apiDescription 用户组重命名
+@apiName UserGroupRename
+@apiGroup UserGroup
+
+@apiPermission 用户
+
+@apiParam {Integer} id 用户组ID
+@apiParam {String}  name 用户组名称
+
+@apiParamExample 请求示例
+POST /api/userGroup/rename
+
+{
+	id:1,
+	name:"测试组"
+}
+
+@apiSuccessExample 成功响应
+HTTP/1.1 200 OK
+
+@apiErrorExample 失败响应
+HTTP/1.1 500
+
+系统内部错误
+*/
+
+// rename 用户组重命名
+func (c *UserGroupController) rename(ctx *gin.Context) {
+	var reqInfo dto.GroupRenameDto
+
+	err := ctx.BindJSON(&reqInfo)
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+	applog.L(ctx, "用户组重命名", map[string]interface{}{
+		"id":   reqInfo.ID,
+		"name": reqInfo.Name,
+	})
+
+	// 获取用户信息
+	claimsValue, _ := ctx.Get(middle.FlagClaims)
+	claims := claimsValue.(*jwt.Claims)
+
+	// 判断用户权限
+	var tmp entity.GroupMember
+
+	// 检查用户权限
+	err = repo.DBDao.First(&tmp, "user_id = ? AND belong = ?", claims.Sub, reqInfo.ID).Error
+	if err == gorm.ErrRecordNotFound {
+		ErrIllegal(ctx, "用户无权限")
+		return
+	}
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	if tmp.Role != 0 {
+		ErrIllegal(ctx, "用户无权限")
+		return
+	}
+
+	// 获取用户组信息
+	var group entity.UserGroup
+
+	err = repo.DBDao.First(&group, "id = ?", reqInfo.ID).Error
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	// 判断用户组名是否发生变化
+	if group.Name == reqInfo.Name {
+		ctx.Status(200)
+		return
+	}
+
+	// 判断用户组名是否存在
+	exist, err := repo.UserGroupRepo.Exist(reqInfo.Name)
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
+
+	// 若已存在
+	if exist {
+		ErrIllegal(ctx, "用户组名已存在")
+		return
+	}
+
+	err = repo.DBDao.Model(&entity.UserGroup{}).Where("id = ?", reqInfo.ID).Update("name", reqInfo.Name).Error
+	if err != nil {
+		ErrSys(ctx, err)
+		return
+	}
 }

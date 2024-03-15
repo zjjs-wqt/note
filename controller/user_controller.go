@@ -511,7 +511,7 @@ func (c *UserController) info(ctx *gin.Context) {
 @apiPermission 管理员，用户
 
 @apiParam {Integer} id 用户ID。
-@apiParam {String} open_id 工号。
+@apiParam {String} openId 工号。
 @apiParam {String} username 用户名。
 @apiParam {String} name 姓名。
 @apiParam {String} phone 手机号。

@@ -48,3 +48,12 @@ type UserInfoDto struct {
 	Email    string `json:"email"`    // 邮箱
 	Sn       string `json:"sn"`       // 身份证
 }
+
+// AyncUserDto 用户同步DTO
+type AyncUserDto struct {
+	JobNumber int    `json:"jobNumber"` // 工号
+	State     int    `json:"state"`     // 用户状态 6 - 离职
+	Name      string `json:"name"`      // 姓名
+	Phone     string `json:"phone"`     // 手机号
+	Email     string `json:"email"`     // 邮箱
+}

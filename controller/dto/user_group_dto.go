@@ -34,3 +34,9 @@ type GroupListDto struct {
 	ID   int    `json:"id"`   // 组ID
 	Name string `json:"name"` // 组名
 }
+
+// GroupRenameDto 用户组重命名DTO
+type GroupRenameDto struct {
+	ID   int    `json:"id"`   // 组ID
+	Name string `json:"name"` // 组名
+}
